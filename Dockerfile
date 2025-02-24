@@ -13,10 +13,6 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install
 
-# Copy the entrypoint script first and set permissions
-COPY docker-entrypoint.sh .
-RUN chmod +x docker-entrypoint.sh
-
 # Copy project files
 COPY . .
 
@@ -29,12 +25,12 @@ RUN npx prisma generate
 # Build the application
 RUN npm run build
 
-# Set default port
+# Set default port and make it available at runtime
 ENV PORT=3000
+ENV NODE_ENV=production
 
-# Expose port from environment variable
+# Expose port
 EXPOSE ${PORT}
 
-# Use bash to execute the entrypoint script
-ENTRYPOINT ["/bin/bash", "/app/docker-entrypoint.sh"]
-CMD ["next", "start", "--port", "${PORT-3000}"] 
+# Start the application with explicit port
+CMD ["sh", "-c", "next start -p ${PORT}"] 
