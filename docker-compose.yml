@@ -12,6 +12,7 @@ services:
       - NEXTAUTH_URL=${NEXTAUTH_URL}
     depends_on:
       - db
+    command: npm run dev
   
   db:
     image: postgres:15

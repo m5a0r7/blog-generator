@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai/index.mjs';
+import OpenAI from 'openai';
 import { prisma } from '@/lib/prisma';
+import { ChatCompletionMessageParam } from 'openai/resources/chat';
 
 const openai = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
@@ -10,60 +11,95 @@ const openai = new OpenAI({
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { topic, userId, feedback, blogId } = body;
+    const { topic, content, feedback, blogId } = body;
 
+    // First, verify the user exists
+    const user = await prisma.user.findUnique({
+      where: { id: body.userId }
+    });
+
+    if (!user) {
+      return new NextResponse(
+        JSON.stringify({
+          content: '',
+          error: 'User not found'
+        }),
+        { 
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    // Get previous conversation history if blogId exists
+    let conversationHistory: ChatCompletionMessageParam[] = [];
+    if (blogId) {
+      const previousVersions = await prisma.version.findMany({
+        where: { blogId },
+        orderBy: { timestamp: 'asc' }
+      });
+
+      conversationHistory = previousVersions.map(version => ([
+        { role: "user" as const, content: version.userPrompt || '' },
+        { role: "assistant" as const, content: version.aiResponse || version.content }
+      ])).flat();
+    }
+
+    // Create the prompt based on whether it's feedback or initial generation
     const prompt = feedback 
-      ? `Improve this blog post based on the feedback: ${feedback}`
+      ? `Improve this blog post based on the feedback: ${feedback}\n\nOriginal post: ${content}`
       : `Write a blog post about: ${topic}`;
+
+    // Construct messages array with history
+    const messages: ChatCompletionMessageParam[] = [
+      {
+        role: "system",
+        content: "You are a professional blog post writer. Write a well-structured, engaging blog post about the given topic. When asked to improve, maintain the overall structure while incorporating the requested changes."
+      },
+      ...conversationHistory,
+      {
+        role: "user",
+        content: prompt
+      }
+    ];
 
     const completion = await openai.chat.completions.create({
       model: "llama-3.3-70b-versatile",
-      messages: [
-        {
-          role: "system",
-          content: "You are a professional blog post writer. Write a well-structured, engaging blog post about the given topic."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
+      messages,
       temperature: 0.7,
       max_tokens: 1000,
     });
 
     const generatedContent = completion.choices[0]?.message?.content || '';
 
-    if (userId && generatedContent) {
-      if (blogId && feedback) {
-        // Creating a new version based on feedback
-        await prisma.version.create({
-          data: {
-            blogId,
-            content: generatedContent,
-            feedback,
-            userPrompt: prompt,
-            aiResponse: generatedContent,
-            timestamp: new Date(),
-          }
-        });
-      } else {
-        // Creating a new blog with initial version
-        await prisma.blog.create({
-          data: {
-            userId,
-            topic,
-            versions: {
-              create: {
-                content: generatedContent,
-                userPrompt: `Initial request: ${topic}`,
-                aiResponse: generatedContent,
-                timestamp: new Date(),
-              }
+    if (blogId && feedback) {
+      // Create a new version when feedback is given
+      await prisma.version.create({
+        data: {
+          blogId,
+          content: generatedContent,
+          feedback,
+          userPrompt: prompt,
+          aiResponse: generatedContent,
+          timestamp: new Date(),
+        }
+      });
+    } else if (!blogId) {
+      // Create initial blog and version
+      await prisma.blog.create({
+        data: {
+          topic,
+          userId: user.id,
+          versions: {
+            create: {
+              content: generatedContent,
+              userPrompt: prompt,
+              aiResponse: generatedContent,
+              timestamp: new Date(),
             }
           }
-        });
-      }
+        }
+      });
     }
 
     return new NextResponse(
@@ -73,9 +109,7 @@ export async function POST(request: Request) {
       }),
       { 
         status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
       }
     );
 
@@ -88,9 +122,7 @@ export async function POST(request: Request) {
       }),
       { 
         status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
       }
     );
   }

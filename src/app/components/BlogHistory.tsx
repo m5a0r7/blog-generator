@@ -12,7 +12,6 @@ import {
   AccordionPanel,
   AccordionIcon,
   HStack,
-  Divider,
   Badge
 } from '@chakra-ui/react';
 import { AddIcon } from '@chakra-ui/icons';
@@ -31,6 +30,12 @@ interface Blog {
   topic: string;
   versions: BlogVersion[];
   currentVersion: number;
+  feedback: {
+    id: string;
+    content: string;
+    type: string;
+    timestamp: Date;
+  }[];
 }
 
 interface BlogHistoryProps {
@@ -54,7 +59,7 @@ export default function BlogHistory({ userId, onSelectBlog, onNewBlog }: BlogHis
 
       try {
         setIsLoading(true);
-        console.log('Fetching blogs for userId:', userId); // Debug log
+        console.log('Fetching blogs for userId:', userId);
 
         const response = await fetch(`/api/blogs/${userId}`, {
           method: 'GET',
@@ -63,25 +68,31 @@ export default function BlogHistory({ userId, onSelectBlog, onNewBlog }: BlogHis
           },
         });
 
-        console.log('Response status:', response.status); // Debug log
-
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+          let errorMessage = `Failed to fetch blogs (Status: ${response.status})`;
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+          } catch {
+            errorMessage = `${errorMessage} - ${response.statusText}`;
+          }
+          throw new Error(errorMessage);
         }
 
         const data = await response.json();
-        console.log('Fetched data:', data); // Debug log
-
-        if (!data || !data.blogs) {
-          throw new Error('Invalid response format');
+        
+        if (!data) {
+          throw new Error('No data received from server');
+        }
+        if (!Array.isArray(data.blogs)) {
+          throw new Error('Invalid response format: blogs array not found');
         }
 
         setBlogs(data.blogs);
         setError(null);
       } catch (error) {
-        console.error('Error details:', error); // Debug log
-        setError(error instanceof Error ? error.message : 'Failed to fetch blogs');
+        console.error('Error fetching blogs:', error);
+        setError(error instanceof Error ? error.message : 'An unexpected error occurred while fetching blogs');
         setBlogs([]);
       } finally {
         setIsLoading(false);
@@ -166,52 +177,73 @@ export default function BlogHistory({ userId, onSelectBlog, onNewBlog }: BlogHis
                           </Text>
                         </Box>
 
-                        {version.userPrompt && (
-                          <Box mb={2}>
-                            <Text fontSize="sm" fontWeight="bold" color="blue.500">
-                              Your Request:
-                            </Text>
-                            <Text fontSize="sm" color="gray.700">
-                              {version.userPrompt}
-                            </Text>
-                          </Box>
-                        )}
-
-                        <Box mb={2}>
+                        {/* Initial content */}
+                        <Box mb={2} p={2} bg="green.50" borderRadius="md">
                           <Text fontSize="sm" fontWeight="bold" color="green.500">
-                            AI Response:
+                            Generated Content:
                           </Text>
-                          <Text fontSize="sm" color="gray.700" noOfLines={3}>
-                            {version.aiResponse || version.content}
+                          <Text fontSize="sm" color="gray.700">
+                            {version.content}
                           </Text>
-                          <Button 
-                            size="sm" 
-                            mt={1}
-                            onClick={() => {
-                              if (onSelectBlog) {
-                                onSelectBlog({
-                                  ...blog,
-                                  currentVersion: index
-                                });
-                              }
-                            }}
-                          >
-                            View Full Content
-                          </Button>
                         </Box>
 
-                        {version.feedback && (
-                          <Box mt={2}>
-                            <Text fontSize="sm" fontWeight="bold" color="orange.500">
-                              Your Feedback:
-                            </Text>
-                            <Text fontSize="sm" color="gray.700">
-                              {version.feedback}
-                            </Text>
-                          </Box>
-                        )}
+                        {/* Show feedback and AI responses */}
+                        {blog.feedback?.map((feedback, fIndex) => {
+                          const feedbackDate = new Date(feedback.timestamp);
+                          const nextVersionDate = blog.versions[index - 1]?.timestamp 
+                            ? new Date(blog.versions[index - 1].timestamp) 
+                            : new Date();
+                          const currentVersionDate = new Date(version.timestamp);
 
-                        <Divider my={2} />
+                          // Only show feedback that occurred after this version but before the next version
+                          if (feedbackDate > currentVersionDate && feedbackDate < nextVersionDate) {
+                            return (
+                              <Box key={fIndex}>
+                                <Box mb={2} p={2} bg="orange.50" borderRadius="md">
+                                  <Text fontSize="sm" fontWeight="bold" color="orange.500">
+                                    Feedback ({new Date(feedback.timestamp).toLocaleString()}):
+                                  </Text>
+                                  <Text fontSize="sm" color="gray.700">
+                                    {feedback.content}
+                                  </Text>
+                                  {feedback.type && (
+                                    <Badge mt={1} colorScheme={feedback.type === 'positive' ? 'green' : 'red'}>
+                                      {feedback.type}
+                                    </Badge>
+                                  )}
+                                </Box>
+
+                                {/* Show AI response if it exists */}
+                                {version.aiResponse && (
+                                  <Box mb={2} p={2} bg="blue.50" borderRadius="md">
+                                    <Text fontSize="sm" fontWeight="bold" color="blue.500">
+                                      AI Response:
+                                    </Text>
+                                    <Text fontSize="sm" color="gray.700">
+                                      {version.aiResponse}
+                                    </Text>
+                                  </Box>
+                                )}
+                              </Box>
+                            );
+                          }
+                          return null;
+                        })}
+
+                        <Button 
+                          size="sm" 
+                          mt={3}
+                          onClick={() => {
+                            if (onSelectBlog) {
+                              onSelectBlog({
+                                ...blog,
+                                currentVersion: index
+                              });
+                            }
+                          }}
+                        >
+                          View Full Content
+                        </Button>
                       </Box>
                     ))}
                   </AccordionPanel>
@@ -226,7 +258,7 @@ export default function BlogHistory({ userId, onSelectBlog, onNewBlog }: BlogHis
                   if (onSelectBlog) {
                     onSelectBlog({
                       ...blog,
-                      currentVersion: 0 // Latest version
+                      currentVersion: 0
                     });
                   }
                 }}
