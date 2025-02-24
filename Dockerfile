@@ -37,4 +37,4 @@ EXPOSE ${PORT}
 
 # Use bash to execute the entrypoint script
 ENTRYPOINT ["/bin/bash", "/app/docker-entrypoint.sh"]
-CMD ["npm", "start"] 
+CMD ["next", "start", "--port", "${PORT-3000}"] 
