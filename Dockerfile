@@ -29,8 +29,12 @@ RUN npx prisma generate
 # Build the application
 RUN npm run build
 
-# Expose port
-EXPOSE 3000
+# Set default port
+ENV PORT=3000
+
+# Expose port from environment variable
+EXPOSE ${PORT}
+
 # Use bash to execute the entrypoint script
 ENTRYPOINT ["/bin/bash", "/app/docker-entrypoint.sh"]
 CMD ["npm", "start"] 
