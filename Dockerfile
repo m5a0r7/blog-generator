@@ -12,7 +12,8 @@ COPY package*.json ./
 
 # Install dependencies
 RUN npm install
-
+COPY docker-entrypoint.sh .
+RUN chmod +x docker-entrypoint.sh
 # Copy project files
 COPY . .
 
