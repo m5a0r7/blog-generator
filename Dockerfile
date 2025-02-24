@@ -33,4 +33,4 @@ ENV NODE_ENV=production
 EXPOSE ${PORT}
 
 # Start the application with explicit port
-CMD ["sh", "-c", "next start -p ${PORT}"] 
+CMD ["npx", "next", "start", "-p", "3000"]
